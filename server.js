@@ -163,6 +163,8 @@ function stepRoom(room, now) {
   updatePaddle(room.left, deltaSeconds);
   updatePaddle(room.right, deltaSeconds);
   const ball = room.ball;
+  const previousX = ball.x;
+  const previousY = ball.y;
   ball.x += ball.vx * deltaSeconds;
   ball.y += ball.vy * deltaSeconds;
   if (ball.y - BALL_RADIUS <= 0 || ball.y + BALL_RADIUS >= HEIGHT) {
@@ -175,20 +177,30 @@ function stepRoom(room, now) {
   const leftTop = room.left.paddleY * HEIGHT - PADDLE_HEIGHT / 2;
   const rightTop = room.right.paddleY * HEIGHT - PADDLE_HEIGHT / 2;
   let hitPaddle = false;
-  if (ball.vx < 0 && ball.x - BALL_RADIUS <= leftX + PADDLE_WIDTH && ball.x > leftX - BALL_RADIUS
-      && ball.y >= leftTop - BALL_RADIUS && ball.y <= leftTop + PADDLE_HEIGHT + BALL_RADIUS) {
-    ball.x = leftX + PADDLE_WIDTH + BALL_RADIUS;
-    hitPaddle = true;
-    const offset = (ball.y - (leftTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
-    ball.vx = Math.abs(ball.vx);
-    ball.vy = offset * 520;
-  } else if (ball.vx > 0 && ball.x + BALL_RADIUS >= rightX && ball.x < rightX + PADDLE_WIDTH + BALL_RADIUS
-      && ball.y >= rightTop - BALL_RADIUS && ball.y <= rightTop + PADDLE_HEIGHT + BALL_RADIUS) {
-    ball.x = rightX - BALL_RADIUS;
-    hitPaddle = true;
-    const offset = (ball.y - (rightTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
-    ball.vx = -Math.abs(ball.vx);
-    ball.vy = offset * 520;
+  const leftPlane = leftX + PADDLE_WIDTH + BALL_RADIUS;
+  const rightPlane = rightX - BALL_RADIUS;
+  if (ball.vx < 0 && previousX >= leftPlane && ball.x <= leftPlane) {
+    const impactTime = (previousX - leftPlane) / (previousX - ball.x);
+    const impactY = previousY + (ball.y - previousY) * impactTime;
+    if (impactY >= leftTop - BALL_RADIUS && impactY <= leftTop + PADDLE_HEIGHT + BALL_RADIUS) {
+      ball.x = leftPlane;
+      ball.y = impactY;
+      hitPaddle = true;
+      const offset = (impactY - (leftTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
+      ball.vx = Math.abs(ball.vx);
+      ball.vy = offset * 520;
+    }
+  } else if (ball.vx > 0 && previousX <= rightPlane && ball.x >= rightPlane) {
+    const impactTime = (rightPlane - previousX) / (ball.x - previousX);
+    const impactY = previousY + (ball.y - previousY) * impactTime;
+    if (impactY >= rightTop - BALL_RADIUS && impactY <= rightTop + PADDLE_HEIGHT + BALL_RADIUS) {
+      ball.x = rightPlane;
+      ball.y = impactY;
+      hitPaddle = true;
+      const offset = (impactY - (rightTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
+      ball.vx = -Math.abs(ball.vx);
+      ball.vy = offset * 520;
+    }
   }
   if (hitPaddle) {
     ball.speed = Math.min(900, ball.speed * 1.045);

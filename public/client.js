@@ -13,8 +13,16 @@ nameInput.value = localStorage.getItem(playerNameKey) || 'Player';
 const state = {
   socket: null, connected: false, queued: false, playing: false, side: 'left',
   leftY: 0.5, rightY: 0.5, ball: { x: 500, y: 300 }, leftScore: 0, rightScore: 0,
+  ballVelocity: { x: 0, y: 0 }, stateReceivedAt: 0, pointerY: null,
   keys: { up: false, down: false }, profile: null,
 };
+let drawRequested = false;
+
+function requestCourtDraw() {
+  if (drawRequested) return;
+  drawRequested = true;
+  requestAnimationFrame(drawCourt);
+}
 
 function setNotice(message) { notice.textContent = message; }
 
@@ -98,6 +106,9 @@ function connect() {
       state.side = message.side;
       state.leftScore = 0;
       state.rightScore = 0;
+      state.pointerY = null;
+      state.ballVelocity = { x: 0, y: 0 };
+      state.stateReceivedAt = performance.now();
       queueButton.disabled = true;
       queueButton.classList.remove('searching');
       queueButton.querySelector('span:nth-child(2)').textContent = 'Match in progress';
@@ -107,7 +118,20 @@ function connect() {
       document.querySelector('#right-score').textContent = '0';
       setNotice(`Matched with ${message.opponent.name} · ${message.opponent.rating} rating. First to ${message.target}.`);
       canvas.focus({ preventScroll: true });
+      requestCourtDraw();
     } else if (message.type === 'state') {
+      const receivedAt = performance.now();
+      const elapsed = state.stateReceivedAt ? Math.max((receivedAt - state.stateReceivedAt) / 1000, 0.016) : 0;
+      const sameRally = state.leftScore === message.leftScore && state.rightScore === message.rightScore;
+      if (sameRally && elapsed) {
+        state.ballVelocity = {
+          x: Math.max(-1000, Math.min(1000, (message.ball.x - state.ball.x) / elapsed)),
+          y: Math.max(-700, Math.min(700, (message.ball.y - state.ball.y) / elapsed)),
+        };
+      } else {
+        state.ballVelocity = { x: 0, y: 0 };
+      }
+      state.stateReceivedAt = receivedAt;
       state.leftY = message.leftY;
       state.rightY = message.rightY;
       state.ball = message.ball;
@@ -117,9 +141,11 @@ function connect() {
       const rivalScore = state.side === 'left' ? message.rightScore : message.leftScore;
       document.querySelector('#left-score').textContent = ownScore;
       document.querySelector('#right-score').textContent = rivalScore;
+      requestCourtDraw();
     } else if (message.type === 'match-end') {
       state.playing = false;
       state.queued = false;
+      state.pointerY = null;
       updateProfile(message.profile);
       renderLeaderboard(message.leaderboard);
       document.querySelector('#match-label').textContent = 'RANKED MATCH';
@@ -131,6 +157,7 @@ function connect() {
         ? (won ? `Your rival disconnected. +${message.winnerChange} rating.` : 'You disconnected from the match. This loss counted toward your rating.')
         : (won ? `Match won. +${message.winnerChange} rating. Run it back?` : `Match lost. ${message.loserChange} rating. Ready for another?`));
       if (won) document.querySelector('#match-label').textContent = 'VICTORY';
+      requestCourtDraw();
     }
   });
   socket.addEventListener('close', () => {
@@ -156,6 +183,7 @@ queueButton.addEventListener('click', () => {
   if (state.queued) {
     state.socket.send(JSON.stringify({ type: 'leave-queue' }));
     state.queued = false;
+    requestCourtDraw();
     queueButton.classList.remove('searching');
     queueButton.querySelector('span:nth-child(2)').textContent = 'Find ranked match';
     setNotice('Matchmaking cancelled.');
@@ -164,6 +192,7 @@ queueButton.addEventListener('click', () => {
     state.socket.send(JSON.stringify({ type: 'hello', id: playerId, name: nameInput.value }));
     state.socket.send(JSON.stringify({ type: 'queue' }));
     state.queued = true;
+    requestCourtDraw();
     queueButton.classList.add('searching');
     queueButton.querySelector('span:nth-child(2)').textContent = 'Cancel matchmaking';
     setNotice('You’re on the court list. Finding a rival…');
@@ -183,7 +212,9 @@ function keyInput(event, isDown) {
   if (!direction) return;
   event.preventDefault();
   state.keys[direction] = isDown;
+  if (isDown) state.pointerY = null;
   sendInput({ up: state.keys.up, down: state.keys.down });
+  requestCourtDraw();
 }
 window.addEventListener('keydown', (event) => keyInput(event, true));
 window.addEventListener('keyup', (event) => keyInput(event, false));
@@ -193,11 +224,55 @@ window.addEventListener('blur', () => {
   sendInput({ up: false, down: false });
 });
 canvas.addEventListener('pointermove', (event) => {
+  if (!state.playing) return;
   const bounds = canvas.getBoundingClientRect();
-  sendInput({ y: (event.clientY - bounds.top) / bounds.height });
+  const halfPaddle = 56 / canvas.height;
+  state.pointerY = Math.max(halfPaddle, Math.min(1 - halfPaddle, (event.clientY - bounds.top) / bounds.height));
+  sendInput({ y: state.pointerY });
+  requestCourtDraw();
 });
 
+function predictBall(age, ownPaddleCenter) {
+  let x = state.ball.x;
+  let y = state.ball.y;
+  const vx = state.ballVelocity.x;
+  const vy = state.ballVelocity.y;
+  const nextX = x + vx * age;
+  const nextY = y + vy * age;
+  const leftPlane = 64;
+  const rightPlane = 936;
+  const leftCenter = state.side === 'left' ? ownPaddleCenter : state.leftY * canvas.height;
+  const rightCenter = state.side === 'right' ? ownPaddleCenter : state.rightY * canvas.height;
+
+  let plane;
+  let paddleCenter;
+  if (vx < 0 && x >= leftPlane && nextX <= leftPlane) {
+    plane = leftPlane;
+    paddleCenter = leftCenter;
+  } else if (vx > 0 && x <= rightPlane && nextX >= rightPlane) {
+    plane = rightPlane;
+    paddleCenter = rightCenter;
+  } else {
+    return { x: nextX, y: nextY };
+  }
+
+  const impactTime = (plane - x) / vx;
+  const impactY = y + vy * impactTime;
+  if (impactY < paddleCenter - 66 || impactY > paddleCenter + 66) return { x: nextX, y: nextY };
+
+  const offset = (impactY - paddleCenter) / 56;
+  const speed = Math.min(900, Math.hypot(vx, vy) * 1.045);
+  const reflectedVY = offset * 520;
+  const reflectedVX = Math.sqrt(Math.max(120 * 120, speed * speed - reflectedVY * reflectedVY)) * (plane === leftPlane ? 1 : -1);
+  const remainingTime = age - impactTime;
+  return {
+    x: plane + reflectedVX * remainingTime,
+    y: impactY + reflectedVY * remainingTime,
+  };
+}
+
 function drawCourt() {
+  drawRequested = false;
   const width = canvas.width;
   const height = canvas.height;
   context.clearRect(0, 0, width, height);
@@ -212,7 +287,12 @@ function drawCourt() {
   context.stroke();
   context.setLineDash([]);
 
-  const yourPaddleY = (state.side === 'left' ? state.leftY : state.rightY) * height;
+  const elapsed = state.stateReceivedAt ? Math.min((performance.now() - state.stateReceivedAt) / 1000, 0.04) : 0;
+  const ownPaddleY = state.side === 'left' ? state.leftY : state.rightY;
+  const keyboardDirection = Number(state.keys.down) - Number(state.keys.up);
+  const halfPaddle = 56 / height;
+  const localPaddleY = Math.max(halfPaddle, Math.min(1 - halfPaddle, state.pointerY ?? ownPaddleY + keyboardDirection * 1.25 * elapsed)) * height;
+  const yourPaddleY = localPaddleY;
   const rivalPaddleY = (state.side === 'left' ? state.rightY : state.leftY) * height;
   const yourX = state.side === 'left' ? 40 : width - 54;
   const rivalX = state.side === 'left' ? width - 54 : 40;
@@ -220,23 +300,24 @@ function drawCourt() {
   context.fillRect(yourX, yourPaddleY - 56, 14, 112);
   context.fillStyle = '#fa6d51';
   context.fillRect(rivalX, rivalPaddleY - 56, 14, 112);
-  const ballX = state.side === 'left' ? state.ball.x : width - state.ball.x;
+  const ballAge = state.playing ? Math.min(elapsed, 0.04) : 0;
+  const predictedBall = predictBall(ballAge, localPaddleY);
+  const predictedBallX = Math.max(10, Math.min(width - 10, predictedBall.x));
+  const predictedBallY = Math.max(10, Math.min(height - 10, predictedBall.y));
+  const ballX = state.side === 'left' ? predictedBallX : width - predictedBallX;
   context.fillStyle = '#f0f4f1';
-  context.shadowColor = 'rgba(240, 244, 241, .38)';
-  context.shadowBlur = state.playing ? 16 : 0;
   context.beginPath();
-  context.arc(ballX, state.ball.y, 10, 0, Math.PI * 2);
+  context.arc(ballX, predictedBallY, 10, 0, Math.PI * 2);
   context.fill();
-  context.shadowBlur = 0;
   if (!state.playing) {
     context.fillStyle = 'rgba(239, 244, 240, .67)';
     context.textAlign = 'center';
     context.font = '500 15px "DM Mono", monospace';
     context.fillText(state.queued ? 'WAITING FOR A RIVAL' : 'RALLY STARTS HERE', width / 2, height / 2 + 66);
   }
-  requestAnimationFrame(drawCourt);
+  if (state.playing) requestCourtDraw();
 }
 
 renderLeaderboard();
-drawCourt();
+requestCourtDraw();
 connect();
