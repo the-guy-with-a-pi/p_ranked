@@ -1,3 +1,5 @@
+<img width="172" height="53" alt="image" src="https://github.com/user-attachments/assets/36e1f672-a133-4f79-9fac-df4063815c2e" />
+
 # Rally Ranked
 
 A lightweight ranked 1v1 Pong game. The Node.js server serves the browser client, pairs queued players by rating, simulates the match, and saves ratings and records in `leaderboard.json`.
