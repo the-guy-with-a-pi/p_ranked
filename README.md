@@ -9,10 +9,14 @@ npm install
 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Join from a second browser or device on the same network to test matchmaking. The server binds to `0.0.0.0`; set `PORT` to change the port.
+Open [http://localhost:3000](http://localhost:3000), create an account, then join ranked matchmaking. Join from a second browser or device on the same network to play another account. The server binds to `0.0.0.0`; set `PORT` to change the port.
+
+Accounts use a 3–18 character username and a 10–128 character password. Passwords are stored as scrypt hashes in `accounts.json`; ranked profiles remain in `leaderboard.json`. Signed HttpOnly sessions use the local `session.key` file and expire after 30 days. Keep `accounts.json`, `leaderboard.json`, and `session.key` backed up together; do not publish or commit them.
+
+Set `DATA_DIR` to store those files outside the project directory, for example on a persistent drive mounted on the Pi. The directory is created automatically and should be writable by the Node process.
 
 ## Raspberry Pi and tunnel
 
 Node.js 20 or newer is required. The server uses a single Node process and one small WebSocket dependency, with a soft limit of 80 connected sockets. Put a tunnel or reverse proxy in front of port 3000 and ensure it supports WebSocket upgrades at `/game`. HTTPS pages automatically use secure WebSockets.
 
-This starter uses browser-generated player IDs and a local JSON leaderboard, not authenticated accounts. For a public ranked service, add real sign-in, abuse/rate controls, backups, and durable shared storage before treating ratings as authoritative; the JSON file assumes one server process and can be reset by deleting it.
+The JSON account and leaderboard stores assume one server process. Auth endpoints have a basic per-IP attempt limit; for a larger public service, move the stores to a transactional database and add account recovery and operational monitoring. Keep the session key persistent across restarts. Behind HTTPS, the server marks session cookies `Secure` when the proxy sets `X-Forwarded-Proto: https`.

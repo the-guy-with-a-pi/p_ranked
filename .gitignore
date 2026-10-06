@@ -1,0 +1,4 @@
+node_modules/
+accounts.json
+session.key
+leaderboard.json

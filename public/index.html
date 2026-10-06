@@ -21,9 +21,37 @@
       <div class="topbar-right">
         <span class="connection"><i class="connection-dot" id="connection-dot"></i><span id="connection-label">CONNECTING</span></span>
         <span class="top-divider"></span>
+        <button class="account-button" id="account-button" type="button">SIGN IN</button>
+        <span class="top-divider"></span>
         <span class="season-label">SEASON 01 <b>·</b> OPEN</span>
       </div>
     </header>
+
+    <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+      <div class="account-dialog-content">
+        <button class="dialog-close" id="account-close" type="button" aria-label="Close account dialog">×</button>
+        <p class="eyebrow"><span class="eyebrow-line"></span> PLAYER ACCOUNT</p>
+        <h2 id="account-title">Back to the court.</h2>
+        <form id="auth-form">
+          <div id="auth-fields">
+            <div class="auth-modes" role="group" aria-label="Account action">
+              <button class="auth-mode selected" data-auth-mode="login" type="button">Sign in</button>
+              <button class="auth-mode" data-auth-mode="register" type="button">Create account</button>
+            </div>
+            <label class="auth-field" for="auth-username">USERNAME<input id="auth-username" name="username" type="text" minlength="3" maxlength="18" pattern="[A-Za-z0-9_]+" autocomplete="username" required></label>
+            <label class="auth-field" for="auth-password">PASSWORD<input id="auth-password" name="password" type="password" minlength="10" maxlength="128" autocomplete="current-password" required></label>
+            <p class="auth-hint" id="auth-hint">Use your username and password to continue.</p>
+            <button class="auth-submit" id="auth-submit" type="submit">Sign in <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="account-status" id="account-status" hidden>
+            <span class="field-label">SIGNED IN AS</span>
+            <strong id="account-username"></strong>
+            <button class="auth-submit signout-button" id="signout-button" type="button">Sign out</button>
+          </div>
+          <p class="auth-notice" id="auth-notice" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </dialog>
 
     <main class="layout">
       <section class="play-column" aria-labelledby="page-title">
@@ -58,7 +86,7 @@
 
         <div class="action-row">
           <button id="queue-button" class="queue-button" type="button"><span class="button-symbol" aria-hidden="true">+</span><span>Find ranked match</span><span class="button-arrow" aria-hidden="true">↗</span></button>
-          <label class="name-field" for="player-name"><span class="field-label">YOUR HANDLE</span><input id="player-name" type="text" maxlength="18" autocomplete="nickname" value="Player" aria-label="Your player name"></label>
+          <div class="name-field account-name"><span class="field-label">PLAYER</span><strong id="player-name">GUEST</strong></div>
           <div class="rating-block"><span class="field-label">RATING</span><strong id="player-rating">—</strong></div>
         </div>
         <p class="notice" id="notice" role="status" aria-live="polite">Connect, choose a handle, and queue up.</p>
