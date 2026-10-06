@@ -60,6 +60,11 @@ function broadcastQueue() {
   for (const client of queue) send(client, status);
 }
 
+function broadcastPresence() {
+  const status = { type: 'presence', online: clients.size };
+  for (const client of clients) send(client, status);
+}
+
 function removeFromQueue(client) {
   const index = queue.indexOf(client);
   if (index !== -1) queue.splice(index, 1);
@@ -112,7 +117,8 @@ function startMatch(first, second) {
   first.side = 'left';
   second.side = 'right';
   first.paddleY = second.paddleY = 0.5;
-  first.input = second.input = { up: false, down: false, pointer: false, targetY: 0.5 };
+  first.input = { up: false, down: false, pointer: false, targetY: 0.5 };
+  second.input = { up: false, down: false, pointer: false, targetY: 0.5 };
   resetBall(room, Math.random() < 0.5 ? -1 : 1);
   rooms.add(room);
   send(first, { type: 'match', side: 'left', opponent: profileSummary(second.profile), target: WIN_SCORE });
@@ -208,21 +214,23 @@ function stepRoom(room, now) {
 function handleMessage(client, raw) {
   let message;
   try { message = JSON.parse(raw.toString()); } catch { return; }
-  if (message.type === 'hello' && !client.profile) {
+  if (message.type === 'hello') {
     const id = String(message.id || '');
     if (!/^[a-zA-Z0-9-]{8,64}$/.test(id)) return client.socket.close(1008, 'Invalid player id');
+    if (client.profile && client.id !== id) return;
     let profile = profiles.get(id);
     if (!profile) {
       profile = { id, name: cleanName(message.name), rating: 1000, wins: 0, losses: 0 };
       profiles.set(id, profile);
-      saveProfiles();
     } else profile.name = cleanName(message.name || profile.name);
     client.id = id;
     client.profile = profile;
+    saveProfiles();
     send(client, { type: 'welcome', profile: profileSummary(profile), leaderboard: leaderboard() });
     return;
   }
   if (!client.profile) return;
+  broadcastPresence();
   if (message.type === 'queue') {
     if (client.room) return;
     if (!queue.includes(client)) {
@@ -287,6 +295,7 @@ webSockets.on('connection', (socket) => {
   socket.on('message', (data) => handleMessage(client, data));
   socket.on('close', () => {
     clients.delete(client);
+    broadcastPresence();
     removeFromQueue(client);
     broadcastQueue();
     if (client.room && !client.room.finished) {
