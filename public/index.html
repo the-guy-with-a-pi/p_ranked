@@ -74,13 +74,13 @@
             <div class="score-player score-player-right"><strong id="right-score">0</strong><span id="opponent-label">RIVAL</span><span class="side-indicator rival-indicator"></span></div>
           </div>
           <div class="canvas-wrap">
-            <canvas id="court" width="1000" height="600" aria-label="Pong game. Move your paddle with W and S, the up and down arrows, or your pointer." tabindex="0"></canvas>
+            <canvas id="court" width="1000" height="600" aria-label="Pong game. Move your paddle with the up and down arrow keys or your pointer." tabindex="0"></canvas>
             <div class="canvas-corner corner-tl"></div><div class="canvas-corner corner-tr"></div>
             <div class="canvas-corner corner-bl"></div><div class="canvas-corner corner-br"></div>
           </div>
           <div class="court-footer">
             <span class="court-message" id="court-message">A clean court. A fresh ladder.</span>
-            <span class="controls-hint"><kbd>W</kbd><kbd>S</kbd><span>MOVE</span><span class="hint-divider"></span><span>OR MOVE POINTER</span></span>
+            <span class="controls-hint"><kbd>↑</kbd><kbd>↓</kbd><span>MOVE</span><span class="hint-divider"></span><span>OR MOVE POINTER</span></span>
           </div>
         </section>
 
@@ -88,6 +88,7 @@
           <button id="queue-button" class="queue-button" type="button"><span class="button-symbol" aria-hidden="true">+</span><span>Find ranked match</span><span class="button-arrow" aria-hidden="true">↗</span></button>
           <div class="name-field account-name"><span class="field-label">PLAYER</span><strong id="player-name">GUEST</strong></div>
           <div class="rating-block"><span class="field-label">RATING</span><strong id="player-rating">—</strong></div>
+          <div class="rank-block"><span class="field-label">RANK</span><strong class="rank-badge" id="player-rank" data-rank="bronze">Bronze</strong><span class="rank-next" id="rank-next">100 to Silver</span></div>
         </div>
         <p class="notice" id="notice" role="status" aria-live="polite">Connect, choose a handle, and queue up.</p>
       </section>

@@ -22,6 +22,8 @@ const PADDLE_WIDTH = 14;
 const BALL_RADIUS = 10;
 const WIN_SCORE = 7;
 const MAX_CONNECTIONS = 80;
+const STATE_BROADCAST_INTERVAL_MS = 16;
+const MAX_BUFFERED_STATE_BYTES = 2048;
 const profiles = loadProfiles();
 const accounts = loadAccounts();
 const sessionKey = loadSessionKey();
@@ -211,7 +213,28 @@ function cleanName(value) {
 }
 
 function profileSummary(profile) {
-  return { id: profile.id, name: profile.name, rating: profile.rating, wins: profile.wins, losses: profile.losses };
+  return { id: profile.id, name: profile.name, rating: profile.rating, rank: rankForRating(profile.rating), wins: profile.wins, losses: profile.losses };
+}
+
+function rankForRating(rating) {
+  const ranks = [
+    { name: 'Bronze', minimum: 0 },
+    { name: 'Silver', minimum: 1100 },
+    { name: 'Gold', minimum: 1200 },
+    { name: 'Platinum', minimum: 1300 },
+    { name: 'Diamond', minimum: 1450 },
+    { name: 'Emerald', minimum: 1600 },
+  ];
+  let current = ranks[0];
+  let next = null;
+  for (let index = 1; index < ranks.length; index += 1) {
+    if (rating < ranks[index].minimum) {
+      next = ranks[index];
+      break;
+    }
+    current = ranks[index];
+  }
+  return { name: current.name, next: next ? { name: next.name, rating: next.minimum } : null };
 }
 
 function leaderboard() {
@@ -222,7 +245,9 @@ function leaderboard() {
 }
 
 function send(client, data) {
-  if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(data));
+  if (client.socket.readyState !== WebSocket.OPEN) return;
+  if (data.type === 'state' && client.socket.bufferedAmount > MAX_BUFFERED_STATE_BYTES) return;
+  client.socket.send(JSON.stringify(data));
 }
 
 function broadcastQueue() {
@@ -266,6 +291,15 @@ function sendState(room) {
   sendPlayerState(room.right, true);
 }
 
+function sendImpact(room, kind, x, y, paddleSide = null) {
+  const sendPlayerImpact = (client, mirrored) => {
+    const side = paddleSide && mirrored ? (paddleSide === 'left' ? 'right' : 'left') : paddleSide;
+    send(client, { type: 'impact', kind, side, x: mirrored ? WIDTH - x : x, y });
+  };
+  sendPlayerImpact(room.left, false);
+  sendPlayerImpact(room.right, true);
+}
+
 function finishMatch(room, winner, reason) {
   if (room.finished) return;
   room.finished = true;
@@ -292,7 +326,21 @@ function finishMatch(room, winner, reason) {
 function startMatch(first, second) {
   removeFromQueue(first);
   removeFromQueue(second);
-  const room = { left: first, right: second, leftScore: 0, rightScore: 0, ball: {}, finished: false, lastTick: Date.now(), lastBroadcast: 0 };
+  const now = Date.now();
+  const room = {
+    left: first,
+    right: second,
+    leftScore: 0,
+    rightScore: 0,
+    ball: { x: WIDTH / 2, y: HEIGHT / 2, vx: 0, vy: 0, speed: 440 },
+    finished: false,
+    started: false,
+    countdownEndsAt: now + 3000,
+    countdownValue: 3,
+    serveDirection: Math.random() < 0.5 ? -1 : 1,
+    lastTick: now,
+    lastBroadcast: now,
+  };
   first.room = room;
   second.room = room;
   first.side = 'left';
@@ -300,10 +348,11 @@ function startMatch(first, second) {
   first.paddleY = second.paddleY = 0.5;
   first.input = { up: false, down: false, pointer: false, targetY: 0.5 };
   second.input = { up: false, down: false, pointer: false, targetY: 0.5 };
-  resetBall(room, Math.random() < 0.5 ? -1 : 1);
   rooms.add(room);
   send(first, { type: 'match', side: 'left', opponent: profileSummary(second.profile), target: WIN_SCORE });
   send(second, { type: 'match', side: 'right', opponent: profileSummary(first.profile), target: WIN_SCORE });
+  send(first, { type: 'countdown', value: 3 });
+  send(second, { type: 'countdown', value: 3 });
   broadcastQueue();
 }
 
@@ -339,6 +388,22 @@ function updatePaddle(client, deltaSeconds) {
 
 function stepRoom(room, now) {
   if (room.finished) return;
+  if (!room.started) {
+    if (now < room.countdownEndsAt) {
+      const value = Math.ceil((room.countdownEndsAt - now) / 1000);
+      if (value !== room.countdownValue) {
+        room.countdownValue = value;
+        send(room.left, { type: 'countdown', value });
+        send(room.right, { type: 'countdown', value });
+      }
+      return;
+    }
+    room.started = true;
+    room.lastTick = now;
+    resetBall(room, room.serveDirection);
+    send(room.left, { type: 'countdown', value: 0 });
+    send(room.right, { type: 'countdown', value: 0 });
+  }
   const deltaSeconds = Math.min((now - room.lastTick) / 1000, 0.04);
   room.lastTick = now;
   updatePaddle(room.left, deltaSeconds);
@@ -351,6 +416,7 @@ function stepRoom(room, now) {
   if (ball.y - BALL_RADIUS <= 0 || ball.y + BALL_RADIUS >= HEIGHT) {
     ball.y = Math.max(BALL_RADIUS, Math.min(HEIGHT - BALL_RADIUS, ball.y));
     ball.vy *= -1;
+    sendImpact(room, 'wall', ball.x, ball.y);
   }
 
   const leftX = 40;
@@ -358,6 +424,7 @@ function stepRoom(room, now) {
   const leftTop = room.left.paddleY * HEIGHT - PADDLE_HEIGHT / 2;
   const rightTop = room.right.paddleY * HEIGHT - PADDLE_HEIGHT / 2;
   let hitPaddle = false;
+  let hitSide = null;
   const leftPlane = leftX + PADDLE_WIDTH + BALL_RADIUS;
   const rightPlane = rightX - BALL_RADIUS;
   if (ball.vx < 0 && previousX >= leftPlane && ball.x <= leftPlane) {
@@ -367,6 +434,7 @@ function stepRoom(room, now) {
       ball.x = leftPlane;
       ball.y = impactY;
       hitPaddle = true;
+      hitSide = 'left';
       const offset = (impactY - (leftTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
       ball.vx = Math.abs(ball.vx);
       ball.vy = offset * 520;
@@ -378,6 +446,7 @@ function stepRoom(room, now) {
       ball.x = rightPlane;
       ball.y = impactY;
       hitPaddle = true;
+      hitSide = 'right';
       const offset = (impactY - (rightTop + PADDLE_HEIGHT / 2)) / (PADDLE_HEIGHT / 2);
       ball.vx = -Math.abs(ball.vx);
       ball.vy = offset * 520;
@@ -387,6 +456,7 @@ function stepRoom(room, now) {
     ball.speed = Math.min(900, ball.speed * 1.045);
     const horizontalSpeed = Math.sqrt(Math.max(120 * 120, ball.speed * ball.speed - ball.vy * ball.vy));
     ball.vx = Math.sign(ball.vx) * horizontalSpeed;
+    sendImpact(room, 'paddle', ball.x, ball.y, hitSide);
   }
 
   if (ball.x < -BALL_RADIUS) {
@@ -398,7 +468,7 @@ function stepRoom(room, now) {
     if (room.leftScore >= WIN_SCORE) return finishMatch(room, room.left, 'score');
     resetBall(room, 1);
   }
-  if (now - room.lastBroadcast >= 33) {
+  if (now - room.lastBroadcast >= STATE_BROADCAST_INTERVAL_MS) {
     room.lastBroadcast = now;
     sendState(room);
   }
@@ -429,13 +499,15 @@ function handleMessage(client, raw) {
   } else if (message.type === 'leave-queue') {
     removeFromQueue(client);
     broadcastQueue();
-  } else if (message.type === 'input' && client.room && !client.room.finished) {
+  } else if (message.type === 'input' && client.room?.started && !client.room.finished) {
     const input = client.input;
     input.up = Boolean(message.up);
     input.down = Boolean(message.down);
     if (Number.isFinite(message.y)) {
       input.pointer = true;
       input.targetY = Math.max(0, Math.min(1, message.y));
+      client.paddleY = Math.max(PADDLE_HEIGHT / 2 / HEIGHT, Math.min(1 - PADDLE_HEIGHT / 2 / HEIGHT, input.targetY));
+      send(client, { type: 'paddle', y: client.paddleY });
     } else if (message.up || message.down) input.pointer = false;
   }
 }

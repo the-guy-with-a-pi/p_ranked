@@ -105,6 +105,15 @@ kbd { min-width: 17px; height: 18px; padding: 2px 4px; border: 1px solid #46504b
 .name-field input { width: 100%; padding: 0 0 3px; border: 0; border-bottom: 1px solid #9ca7a2; border-radius: 0; background: transparent; color: var(--ink); outline: none; font-size: 14px; }
 .rating-block { min-width: 63px; display: grid; gap: 5px; }
 .rating-block strong { font: 600 19px var(--display); }
+.rank-block { min-width: 86px; display: grid; gap: 3px; }
+.rank-badge { width: fit-content; font: 700 13px var(--display); }
+.rank-next { color: #77817d; font: 8px var(--mono); white-space: nowrap; }
+.rank-badge[data-rank="bronze"], .ladder-division[data-rank="bronze"] { color: #9e633f; }
+.rank-badge[data-rank="silver"], .ladder-division[data-rank="silver"] { color: #65727c; }
+.rank-badge[data-rank="gold"], .ladder-division[data-rank="gold"] { color: #8a6900; }
+.rank-badge[data-rank="platinum"], .ladder-division[data-rank="platinum"] { color: #2b7b71; }
+.rank-badge[data-rank="diamond"], .ladder-division[data-rank="diamond"] { color: #477ca7; }
+.rank-badge[data-rank="emerald"], .ladder-division[data-rank="emerald"] { color: #217a58; }
 .notice { min-height: 20px; margin: 10px 0 0; color: #7b8581; font: 10px var(--mono); }
 .panel-heading { display: flex; align-items: flex-end; justify-content: space-between; padding: 2px 0 17px; border-bottom: 1px solid var(--ink); }
 .panel-heading h2 { margin: 8px 0 0; font-size: 22px; letter-spacing: -.025em; font-weight: 600; }
@@ -114,9 +123,10 @@ kbd { min-width: 17px; height: 18px; padding: 2px 4px; border: 1px solid #46504b
 .ladder-columns span:last-child { text-align: right; }
 .leaderboard { min-height: 250px; margin: 0; padding: 0; list-style: none; }
 .ladder-row { min-height: 44px; border-top: 1px solid #d9dfdc; font-size: 11px; animation: row-in .3s ease-out both; }
-.ladder-player { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.ladder-player { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .ladder-rank { width: 17px; color: #8a9490; font: 9px var(--mono); }
-.ladder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.ladder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.ladder-division { font: 8px var(--mono); white-space: nowrap; }
 .ladder-record { color: #717b77; font: 9px var(--mono); }
 .ladder-rating { text-align: right; font: 10px var(--mono); }
 .ladder-row:first-child .ladder-rank { color: #bd4f38; }

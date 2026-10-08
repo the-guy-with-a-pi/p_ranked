@@ -13,8 +13,8 @@ let authMode = 'login';
 const state = {
   socket: null, connected: false, queued: false, playing: false,
   leftY: 0.5, rightY: 0.5, ball: { x: 500, y: 300 }, leftScore: 0, rightScore: 0,
-  ballVelocity: { x: 0, y: 0 }, stateReceivedAt: 0, pointerY: null,
-  keys: { up: false, down: false }, profile: null,
+  ballVelocity: { x: 0, y: 0 }, stateReceivedAt: 0, pointerTarget: null, pointerFramePending: false,
+  keys: { up: false, down: false }, profile: null, countdown: null, goUntil: 0, impacts: [], matchResult: null,
 };
 let drawRequested = false;
 
@@ -30,6 +30,13 @@ function updateProfile(profile) {
   if (!profile) return;
   state.profile = profile;
   document.querySelector('#player-rating').textContent = profile.rating;
+  const rank = profile.rank || { name: 'Bronze', next: { name: 'Silver', rating: 1100 } };
+  const rankElement = document.querySelector('#player-rank');
+  rankElement.textContent = rank.name;
+  rankElement.dataset.rank = rank.name.toLowerCase();
+  document.querySelector('#rank-next').textContent = rank.next
+    ? `${Math.max(0, rank.next.rating - profile.rating)} to ${rank.next.name}`
+    : 'TOP RANK';
   document.querySelector('#wins').textContent = profile.wins;
   document.querySelector('#losses').textContent = profile.losses;
   const total = profile.wins + profile.losses;
@@ -63,7 +70,11 @@ function renderLeaderboard(entries = []) {
     const name = document.createElement('span');
     name.className = 'ladder-name';
     name.textContent = player.name;
-    identity.append(rank, name);
+    const division = document.createElement('span');
+    division.className = 'ladder-division';
+    division.textContent = player.rank?.name || 'Bronze';
+    division.dataset.rank = division.textContent.toLowerCase();
+    identity.append(rank, name, division);
     const record = document.createElement('span');
     record.className = 'ladder-record';
     record.textContent = `${player.wins}–${player.losses}`;
@@ -107,18 +118,32 @@ function connect() {
       state.playing = true;
       state.leftScore = 0;
       state.rightScore = 0;
-      state.pointerY = null;
+      state.pointerTarget = null;
+      state.countdown = 3;
+      state.goUntil = 0;
+      state.matchResult = null;
       state.ballVelocity = { x: 0, y: 0 };
       state.stateReceivedAt = performance.now();
       queueButton.disabled = true;
       queueButton.classList.remove('searching');
       queueButton.querySelector('span:nth-child(2)').textContent = 'Match in progress';
-      document.querySelector('#match-label').textContent = 'RANKED MATCH · LIVE';
+      document.querySelector('#match-label').textContent = 'RANKED MATCH · STARTING';
       document.querySelector('#opponent-label').textContent = message.opponent.name.toUpperCase();
       document.querySelector('#left-score').textContent = '0';
       document.querySelector('#right-score').textContent = '0';
       setNotice(`Matched with ${message.opponent.name} · ${message.opponent.rating} rating. First to ${message.target}.`);
       canvas.focus({ preventScroll: true });
+      requestCourtDraw();
+    } else if (message.type === 'countdown') {
+      state.countdown = message.value;
+      if (message.value === 0) {
+        state.goUntil = performance.now() + 650;
+        document.querySelector('#match-label').textContent = 'RANKED MATCH · LIVE';
+        setNotice('GO! First to 7.');
+      } else {
+        document.querySelector('#match-label').textContent = `STARTING · ${message.value}`;
+        setNotice(`Game starts in ${message.value}…`);
+      }
       requestCourtDraw();
     } else if (message.type === 'state') {
       const receivedAt = performance.now();
@@ -132,10 +157,17 @@ function connect() {
       document.querySelector('#left-score').textContent = message.leftScore;
       document.querySelector('#right-score').textContent = message.rightScore;
       requestCourtDraw();
+    } else if (message.type === 'paddle') {
+      state.leftY = message.y;
+      requestCourtDraw();
+    } else if (message.type === 'impact') {
+      state.impacts.push({ ...message, startedAt: performance.now() });
+      requestCourtDraw();
     } else if (message.type === 'match-end') {
       state.playing = false;
       state.queued = false;
-      state.pointerY = null;
+      state.pointerTarget = null;
+      state.countdown = null;
       updateProfile(message.profile);
       renderLeaderboard(message.leaderboard);
       document.querySelector('#match-label').textContent = 'RANKED MATCH';
@@ -143,9 +175,12 @@ function connect() {
       queueButton.querySelector('span:nth-child(2)').textContent = 'Find ranked match';
       queueButton.classList.remove('searching');
       const won = message.winnerId === state.profile?.id;
+      const eloChange = won ? message.winnerChange : message.loserChange;
+      const eloText = `${eloChange > 0 ? '+' : ''}${eloChange} ELO`;
+      state.matchResult = { won, eloText, rating: message.profile.rating };
       setNotice(message.reason === 'disconnect'
-        ? (won ? `Your rival disconnected. +${message.winnerChange} rating.` : 'You disconnected from the match. This loss counted toward your rating.')
-        : (won ? `Match won. +${message.winnerChange} rating. Run it back?` : `Match lost. ${message.loserChange} rating. Ready for another?`));
+        ? `${won ? 'Your rival disconnected.' : 'You disconnected; the match counts as a loss.'} ${eloText}.`
+        : `${won ? 'Match won.' : 'Match lost.'} ${eloText}. ${won ? 'Run it back?' : 'Ready for another?'}`);
       if (won) document.querySelector('#match-label').textContent = 'VICTORY';
       requestCourtDraw();
     }
@@ -156,6 +191,7 @@ function connect() {
     setConnection(false);
     state.queued = false;
     state.playing = false;
+    state.countdown = null;
     queueButton.classList.remove('searching');
     queueButton.querySelector('span:nth-child(2)').textContent = 'Find ranked match';
     setNotice('Connection lost. Reconnecting…');
@@ -191,12 +227,13 @@ queueButton.addEventListener('click', () => {
 });
 
 function keyInput(event, isDown) {
+  if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
   const key = event.key.toLowerCase();
-  const direction = key === 'w' || key === 'arrowup' ? 'up' : key === 's' || key === 'arrowdown' ? 'down' : null;
+  const direction = key === 'arrowup' ? 'up' : key === 'arrowdown' ? 'down' : null;
   if (!direction) return;
   event.preventDefault();
   state.keys[direction] = isDown;
-  if (isDown) state.pointerY = null;
+  if (isDown) state.pointerTarget = null;
   sendInput({ up: state.keys.up, down: state.keys.down });
   requestCourtDraw();
 }
@@ -276,12 +313,16 @@ document.querySelector('#signout-button').addEventListener('click', async () => 
   account = null;
   state.playing = false;
   state.queued = false;
+  state.matchResult = null;
   const socket = state.socket;
   state.socket = null;
   if (socket) socket.close();
   setConnection(false);
   updateAccountInterface();
   document.querySelector('#player-rating').textContent = '—';
+  document.querySelector('#player-rank').textContent = '—';
+  document.querySelector('#player-rank').dataset.rank = '';
+  document.querySelector('#rank-next').textContent = '';
   document.querySelector('#wins').textContent = '0';
   document.querySelector('#losses').textContent = '0';
   document.querySelector('#win-rate').textContent = '—%';
@@ -317,8 +358,14 @@ canvas.addEventListener('pointermove', (event) => {
   if (!state.playing) return;
   const bounds = canvas.getBoundingClientRect();
   const halfPaddle = 56 / canvas.height;
-  state.pointerY = Math.max(halfPaddle, Math.min(1 - halfPaddle, (event.clientY - bounds.top) / bounds.height));
-  sendInput({ y: state.pointerY });
+  state.pointerTarget = Math.max(halfPaddle, Math.min(1 - halfPaddle, (event.clientY - bounds.top) / bounds.height));
+  if (!state.pointerFramePending) {
+    state.pointerFramePending = true;
+    requestAnimationFrame(() => {
+      state.pointerFramePending = false;
+      if (state.playing && state.pointerTarget !== null) sendInput({ y: state.pointerTarget });
+    });
+  }
   requestCourtDraw();
 });
 
@@ -361,6 +408,35 @@ function predictBall(age, ownPaddleCenter) {
   };
 }
 
+function drawImpactEffects(now) {
+  state.impacts = state.impacts.filter((impact) => now - impact.startedAt < 340);
+  for (const impact of state.impacts) {
+    const progress = (now - impact.startedAt) / 340;
+    const color = impact.kind === 'wall' ? '#f0f4f1' : impact.side === 'left' ? '#d1f35a' : '#fa6d51';
+    const radius = 11 + progress * (impact.kind === 'wall' ? 18 : 25);
+    context.globalAlpha = 1 - progress;
+    context.strokeStyle = color;
+    context.lineWidth = impact.kind === 'wall' ? 1.5 : 2.5;
+    context.beginPath();
+    context.arc(impact.x, impact.y, radius, 0, Math.PI * 2);
+    context.stroke();
+    context.lineWidth = 2;
+    context.lineCap = 'round';
+    const rays = impact.kind === 'wall' ? 4 : 6;
+    for (let ray = 0; ray < rays; ray += 1) {
+      const angle = ray * Math.PI * 2 / rays;
+      const start = radius + 4;
+      const end = start + (1 - progress) * 7;
+      context.beginPath();
+      context.moveTo(impact.x + Math.cos(angle) * start, impact.y + Math.sin(angle) * start);
+      context.lineTo(impact.x + Math.cos(angle) * end, impact.y + Math.sin(angle) * end);
+      context.stroke();
+    }
+  }
+  context.globalAlpha = 1;
+  context.lineCap = 'butt';
+}
+
 function drawCourt() {
   drawRequested = false;
   const width = canvas.width;
@@ -378,10 +454,7 @@ function drawCourt() {
   context.setLineDash([]);
 
   const elapsed = state.stateReceivedAt ? Math.min((performance.now() - state.stateReceivedAt) / 1000, 0.04) : 0;
-  const ownPaddleY = state.leftY;
-  const keyboardDirection = Number(state.keys.down) - Number(state.keys.up);
-  const halfPaddle = 56 / height;
-  const localPaddleY = Math.max(halfPaddle, Math.min(1 - halfPaddle, state.pointerY ?? ownPaddleY + keyboardDirection * 1.25 * elapsed)) * height;
+  const localPaddleY = state.leftY * height;
   const yourPaddleY = localPaddleY;
   const rivalPaddleY = state.rightY * height;
   const yourX = 40;
@@ -399,7 +472,38 @@ function drawCourt() {
   context.beginPath();
   context.arc(ballX, predictedBallY, 10, 0, Math.PI * 2);
   context.fill();
-  if (!state.playing) {
+  drawImpactEffects(performance.now());
+  const countdownText = state.countdown > 0
+    ? String(state.countdown)
+    : state.countdown === 0 && performance.now() < state.goUntil ? 'GO!' : null;
+  if (state.matchResult && !state.playing) {
+    context.fillStyle = 'rgba(23, 27, 26, .82)';
+    context.fillRect(0, 0, width, height);
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = '#edf1ef';
+    context.font = '600 25px "Space Grotesk", sans-serif';
+    context.fillText(state.matchResult.won ? 'VICTORY' : 'MATCH COMPLETE', width / 2, height / 2 - 58);
+    context.fillStyle = state.matchResult.won ? '#d1f35a' : '#fa6d51';
+    context.font = '700 62px "Space Grotesk", sans-serif';
+    context.fillText(state.matchResult.eloText, width / 2, height / 2 + 5);
+    context.fillStyle = 'rgba(237, 241, 239, .68)';
+    context.font = '10px "DM Mono", monospace';
+    context.fillText(`RATING NOW  ${state.matchResult.rating}`, width / 2, height / 2 + 58);
+    context.textBaseline = 'alphabetic';
+  } else if (countdownText) {
+    context.fillStyle = 'rgba(23, 27, 26, .56)';
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = '#d1f35a';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.font = '700 112px "Space Grotesk", sans-serif';
+    context.fillText(countdownText, width / 2, height / 2);
+    context.textBaseline = 'alphabetic';
+  } else if (state.countdown === 0) {
+    state.countdown = null;
+  }
+  if (!state.playing && !state.matchResult) {
     context.fillStyle = 'rgba(239, 244, 240, .67)';
     context.textAlign = 'center';
     context.font = '500 15px "DM Mono", monospace';
