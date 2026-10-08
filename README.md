@@ -21,17 +21,32 @@ Set `DATA_DIR` to store those files outside the project directory, for example o
 
 Node.js 20 or newer is required. The server uses a single Node process and one small WebSocket dependency, with a soft limit of 80 connected sockets. Put a tunnel or reverse proxy in front of port 3000 and ensure it supports WebSocket upgrades at `/game`. HTTPS pages automatically use secure WebSockets.
 
-Clone the repository on the Pi, install from the lockfile, and keep account data on a persistent directory outside the checkout:
+For a first install, clone the repository. For later updates, run the `git pull` command from inside the existing checkout:
 
 ```sh
-git clone <repository-url>
-cd pongranked
+git clone https://github.com/the-guy-with-a-pi/p_ranked.git
+cd p_ranked
+# Later updates, from this directory:
+git pull --ff-only origin main
 npm ci --omit=dev
-sudo mkdir -p /var/lib/rally-ranked
-sudo chown -R "$USER":"$(id -gn)" /var/lib/rally-ranked
-DATA_DIR=/var/lib/rally-ranked PORT=3000 npm start
 ```
 
-Keep the Node process running with a service manager such as `systemd` for unattended restarts. Point the tunnel or reverse proxy to the Pi on port 3000 and preserve WebSocket upgrades.
+Keep account data on a persistent directory outside the checkout:
+
+```sh
+export DATA_DIR=/var/lib/rally-ranked
+sudo mkdir -p /var/lib/rally-ranked
+sudo chown -R "$USER":"$(id -gn)" /var/lib/rally-ranked
+```
+
+Start the app with PM2 and save it for reboot recovery:
+
+```sh
+DATA_DIR="$DATA_DIR" PORT=3000 pm2 start server.js --name rally-ranked
+pm2 save
+pm2 startup
+```
+
+Run the command printed by `pm2 startup` once. After code updates, run `npm ci --omit=dev` and `DATA_DIR="$DATA_DIR" PORT=3000 pm2 restart rally-ranked --update-env`. Point the tunnel or reverse proxy to the Pi on port 3000 and preserve WebSocket upgrades.
 
 The JSON account and leaderboard stores assume one server process. Auth endpoints have a basic per-IP attempt limit; for a larger public service, move the stores to a transactional database and add account recovery and operational monitoring. Keep the session key persistent across restarts. Behind HTTPS, the server marks session cookies `Secure` when the proxy sets `X-Forwarded-Proto: https`.
