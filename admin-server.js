@@ -36,7 +36,7 @@ async function readBody(request) {
 }
 
 async function proxyAdminRequest(request, response, pathname) {
-  const userRoute = pathname.match(/^\/api\/users\/([a-f0-9-]+)\/(elo|ban)$/i);
+  const userRoute = pathname.match(/^\/api\/users\/([a-f0-9-]+)\/(elo|delete)$/i);
   if (pathname !== '/api/users' && !userRoute) return sendJson(response, 404, { error: 'Not found.' });
   if (pathname === '/api/users' && request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' });
   if (userRoute && request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed.' });

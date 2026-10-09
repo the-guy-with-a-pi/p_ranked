@@ -62,9 +62,8 @@ td { height: 60px; padding: 8px 12px; border-top: 1px solid #d6ddda; font-size: 
 .icon-action, .ban-button { height: 29px; min-width: 30px; border: 1px solid #b6c0bb; background: transparent; cursor: pointer; }
 .icon-action { font-size: 16px; }
 .icon-action:hover { border-color: var(--ink); background: var(--acid); }
-.ban-button { padding: 0 9px; font: 9px var(--mono); }
-.ban-button.banned { border-color: #d5a69e; color: #a53c2e; }
-.ban-button:hover { background: #e5eae7; }
+.delete-button { height: 29px; padding: 0 9px; border: 1px solid #d5a69e; background: transparent; color: #a53c2e; cursor: pointer; font: 9px var(--mono); }
+.delete-button:hover { background: #f7e8e5; border-color: #a53c2e; }
 .loading-row, .empty-row { height: 84px; text-align: center; color: #75807b; font: 11px var(--mono); }
 .notice { min-height: 19px; margin: 12px 0; color: #5b6e60; font: 10px var(--mono); }
 .notice.error { color: #a53c2e; }

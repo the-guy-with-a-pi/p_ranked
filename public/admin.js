@@ -86,12 +86,13 @@ function renderUsers() {
     addElo.title = `Add Elo to ${user.username}`;
     addElo.setAttribute('aria-label', addElo.title);
     addElo.addEventListener('click', () => changeElo(user, Number(amount.value)));
-    const ban = document.createElement('button');
-    ban.className = `ban-button${user.banned ? ' banned' : ''}`;
-    ban.type = 'button';
-    ban.textContent = user.banned ? 'UNBAN' : 'BAN';
-    ban.addEventListener('click', () => setBanned(user, !user.banned));
-    actions.append(amount, removeElo, addElo, ban);
+    const remove = document.createElement('button');
+    remove.className = 'delete-button';
+    remove.type = 'button';
+    remove.textContent = 'DELETE';
+    remove.setAttribute('aria-label', `Delete ${user.username} and their ranked data`);
+    remove.addEventListener('click', () => deleteUser(user));
+    actions.append(amount, removeElo, addElo, remove);
     actionsCell.append(actions);
 
     row.append(playerCell, rankCell, rating, record, accountCell, actionsCell);
@@ -135,17 +136,14 @@ async function changeElo(user, delta) {
   } catch (error) { showNotice(error.message, true); }
 }
 
-async function setBanned(user, banned) {
-  const action = banned ? 'ban' : 'unban';
-  if (banned && !window.confirm(`Ban ${user.username}? Active matches will be forfeited.`)) return;
+async function deleteUser(user) {
+  if (!window.confirm(`Permanently delete ${user.username} and all Elo, wins, and losses? Active matches will be forfeited.`)) return;
   try {
-    await requestJson(`/api/users/${user.id}/ban`, {
+    await requestJson(`/api/users/${user.id}/delete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ banned }),
     });
     await loadUsers();
-    showNotice(`${user.username} ${banned ? 'banned' : 'unbanned'}.`);
+    showNotice(`${user.username} and their ranked data were deleted.`);
   } catch (error) { showNotice(error.message, true); }
 }
 

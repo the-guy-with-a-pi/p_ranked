@@ -15,6 +15,8 @@ Open [http://localhost:3000](http://localhost:3000), create an account, then joi
 
 Accounts use a 3–18 character username and a 10–128 character password. Passwords are stored as scrypt hashes in `accounts.json`; ranked profiles remain in `leaderboard.json`. Signed HttpOnly sessions use `session.key` and expire after 30 days. The LAN admin app uses a separate random `admin.key`. Keep these files together in `DATA_DIR`, back them up together, and never publish or commit them.
 
+The private admin panel runs on port 3002. It can adjust Elo or permanently delete an account and its ranked history; an active match is forfeited when a player is deleted.
+
 Set `DATA_DIR` to store those files outside the project directory, for example on a persistent drive mounted on the Pi. The directory is created automatically and should be writable by the Node process.
 
 ## Raspberry Pi and tunnel

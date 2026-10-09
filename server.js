@@ -267,7 +267,7 @@ async function handleAdminApi(request, response, pathname) {
   if (pathname === '/internal/admin/users' && request.method === 'GET') {
     return sendJson(response, 200, { users: adminUserList() });
   }
-  const match = pathname.match(/^\/internal\/admin\/users\/([a-f0-9-]+)\/(elo|ban)$/i);
+  const match = pathname.match(/^\/internal\/admin\/users\/([a-f0-9-]+)\/(elo|delete)$/i);
   if (!match) return sendJson(response, 404, { error: 'Admin route not found.' });
   if (request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed.' }, { Allow: 'POST' });
 
@@ -293,24 +293,22 @@ async function handleAdminApi(request, response, pathname) {
     return sendJson(response, 200, { user: adminUserList().find((user) => user.id === profile.id), actualDelta: profile.rating - oldRating });
   }
 
-  if (typeof body.banned !== 'boolean') return sendJson(response, 400, { error: 'A boolean banned value is required.' });
   const account = [...accounts.values()].find((item) => item.profileId === profile.id);
-  if (!account) return sendJson(response, 404, { error: 'Account not found.' });
-  account.banned = body.banned;
-  saveAccounts();
-  if (account.banned) {
-    for (const client of clients) {
-      if (client.id !== profile.id) continue;
-      removeFromQueue(client);
-      if (client.room && !client.room.finished) {
-        const opponent = client.room.left === client ? client.room.right : client.room.left;
-        finishMatch(client.room, opponent, 'ban');
-      }
-      client.socket.close(1008, 'Account banned');
+  for (const client of [...clients]) {
+    if (client.account?.id !== account?.id && client.profile?.id !== profile.id) continue;
+    removeFromQueue(client);
+    if (client.room && !client.room.finished) {
+      const opponent = client.room.left === client ? client.room.right : client.room.left;
+      finishMatch(client.room, opponent, 'admin-delete');
     }
-    broadcastQueue();
+    client.socket.close(1008, 'Account deleted');
   }
-  return sendJson(response, 200, { user: adminUserList().find((user) => user.id === profile.id) });
+  if (account) accounts.delete(account.id);
+  profiles.delete(profile.id);
+  saveProfiles();
+  saveAccounts();
+  broadcastQueue();
+  return sendJson(response, 200, { deleted: true, username: account?.username || profile.name });
 }
 
 function leaderboard() {
