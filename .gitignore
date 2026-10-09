@@ -1,4 +1,5 @@
 node_modules/
 accounts.json
 session.key
+admin.key
 leaderboard.json

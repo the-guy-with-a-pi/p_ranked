@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171b1a">
+    <title>Rally Ranked / Admin</title>
+    <link rel="stylesheet" href="/admin.css">
+    <script src="/admin.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Rally Ranked admin home"><span class="brand-mark">R</span><span>RALLY <b>OPS</b></span></a>
+      <div class="topbar-status"><span class="status-dot"></span><span>PRIVATE NETWORK</span><span class="separator"></span><span>PORT 3002</span></div>
+    </header>
+    <main class="page">
+      <section class="page-head">
+        <div><p class="eyebrow">PLAYER OPERATIONS <span>/</span> LIVE DATA</p><h1>Control room</h1><p class="subhead">Rank adjustments and account access</p></div>
+        <button class="refresh-button" id="refresh-button" type="button" aria-label="Refresh player list" title="Refresh">↻</button>
+      </section>
+      <section class="overview" aria-label="Player totals">
+        <div><span class="metric-label">TOTAL PLAYERS</span><strong id="player-count">—</strong></div>
+        <div><span class="metric-label">BANNED</span><strong id="banned-count">—</strong></div>
+        <span class="updated-at" id="updated-at">Waiting for server…</span>
+      </section>
+      <section class="list-section" aria-labelledby="players-heading">
+        <div class="list-head"><div><h2 id="players-heading">Players</h2><p>Changes apply immediately to connected games.</p></div><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Find player" autocomplete="off" aria-label="Find player"></label></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PLAYER</th><th>RANK</th><th>ELO</th><th>RECORD</th><th>ACCOUNT</th><th>ACTIONS</th></tr></thead>
+            <tbody id="players-body"><tr><td class="loading-row" colspan="6">Loading player data…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="notice" id="notice" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

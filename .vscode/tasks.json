@@ -11,6 +11,18 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Rally Ranked Admin",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"admin"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

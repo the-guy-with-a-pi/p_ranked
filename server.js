@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const { WebSocket, WebSocketServer } = require('ws');
+const { loadAdminKey } = require('./admin-key');
 const scrypt = promisify(crypto.scrypt);
 
 const PORT = Number(process.env.PORT || 3000);
@@ -13,6 +14,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const PROFILE_FILE = path.join(DATA_DIR, 'leaderboard.json');
 const ACCOUNT_FILE = path.join(DATA_DIR, 'accounts.json');
 const SESSION_KEY_FILE = path.join(DATA_DIR, 'session.key');
+const adminKey = loadAdminKey(DATA_DIR);
 const SESSION_COOKIE = 'rally_session';
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 const WIDTH = 1000;
@@ -107,6 +109,12 @@ function sessionAccount(request) {
   return accounts.get(accountId) || null;
 }
 
+function isAdminRequest(request) {
+  const provided = Buffer.from(String(request.headers['x-admin-key'] || ''));
+  const expected = Buffer.from(adminKey);
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
+
 function sessionCookie(request, account, clear = false) {
   const secure = request.socket.encrypted || String(request.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
   const value = clear ? '' : signedSession(account);
@@ -148,9 +156,15 @@ function originAllowed(request) {
 }
 
 async function handleApi(request, response, pathname) {
+  if (pathname.startsWith('/internal/admin/')) {
+    if (!isAdminRequest(request)) return sendJson(response, 403, { error: 'Admin access denied.' });
+    return handleAdminApi(request, response, pathname);
+  }
+
   if (pathname === '/api/me' && request.method === 'GET') {
     const account = sessionAccount(request);
     if (!account) return sendJson(response, 401, { error: 'Sign in to continue.' });
+    if (account.banned) return sendJson(response, 403, { error: 'This account is banned.' });
     return sendJson(response, 200, { account: { username: account.username, profile: profileSummary(accountProfile(account)) } });
   }
 
@@ -182,7 +196,7 @@ async function handleApi(request, response, pathname) {
     if ([...accounts.values()].some((saved) => saved.username.toLowerCase() === normalizedUsername)) {
       return sendJson(response, 409, { error: 'That username is already taken.' });
     }
-    account = { id: crypto.randomUUID(), profileId: crypto.randomUUID(), username, salt: salt.toString('base64'), passwordHash: passwordHash.toString('base64') };
+    account = { id: crypto.randomUUID(), profileId: crypto.randomUUID(), username, salt: salt.toString('base64'), passwordHash: passwordHash.toString('base64'), banned: false };
     accounts.set(account.id, account);
     accountProfile(account);
     saveAccounts();
@@ -196,6 +210,7 @@ async function handleApi(request, response, pathname) {
   if (candidate.length !== savedHash.length || !crypto.timingSafeEqual(candidate, savedHash)) {
     return sendJson(response, 401, { error: 'Username or password is incorrect.' });
   }
+  if (account.banned) return sendJson(response, 403, { error: 'This account is banned.' });
   return sendJson(response, 200, { account: { username: account.username, profile: profileSummary(accountProfile(account)) } }, { 'Set-Cookie': sessionCookie(request, account) });
 }
 
@@ -235,6 +250,67 @@ function rankForRating(rating) {
     current = ranks[index];
   }
   return { name: current.name, next: next ? { name: next.name, rating: next.minimum } : null };
+}
+
+function adminUserList() {
+  return [...profiles.values()].map((profile) => {
+    const account = [...accounts.values()].find((item) => item.profileId === profile.id);
+    return {
+      ...profileSummary(profile),
+      username: account?.username || profile.name,
+      banned: Boolean(account?.banned),
+    };
+  }).sort((first, second) => second.rating - first.rating || first.username.localeCompare(second.username));
+}
+
+async function handleAdminApi(request, response, pathname) {
+  if (pathname === '/internal/admin/users' && request.method === 'GET') {
+    return sendJson(response, 200, { users: adminUserList() });
+  }
+  const match = pathname.match(/^\/internal\/admin\/users\/([a-f0-9-]+)\/(elo|ban)$/i);
+  if (!match) return sendJson(response, 404, { error: 'Admin route not found.' });
+  if (request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed.' }, { Allow: 'POST' });
+
+  let body;
+  try { body = await readJson(request); } catch (error) {
+    return sendJson(response, error.status || 400, { error: error.message });
+  }
+  const profile = profiles.get(match[1]);
+  if (!profile) return sendJson(response, 404, { error: 'Player not found.' });
+
+  if (match[2] === 'elo') {
+    const delta = Number(body.delta);
+    if (!Number.isSafeInteger(delta) || delta === 0 || Math.abs(delta) > 10000) {
+      return sendJson(response, 400, { error: 'Elo adjustment must be an integer from -10000 to 10000, excluding zero.' });
+    }
+    const oldRating = profile.rating;
+    profile.rating = Math.max(100, profile.rating + delta);
+    saveProfiles();
+    const updatedProfile = profileSummary(profile);
+    for (const client of clients) {
+      if (client.profile?.id === profile.id) send(client, { type: 'profile', profile: updatedProfile });
+    }
+    return sendJson(response, 200, { user: adminUserList().find((user) => user.id === profile.id), actualDelta: profile.rating - oldRating });
+  }
+
+  if (typeof body.banned !== 'boolean') return sendJson(response, 400, { error: 'A boolean banned value is required.' });
+  const account = [...accounts.values()].find((item) => item.profileId === profile.id);
+  if (!account) return sendJson(response, 404, { error: 'Account not found.' });
+  account.banned = body.banned;
+  saveAccounts();
+  if (account.banned) {
+    for (const client of clients) {
+      if (client.id !== profile.id) continue;
+      removeFromQueue(client);
+      if (client.room && !client.room.finished) {
+        const opponent = client.room.left === client ? client.room.right : client.room.left;
+        finishMatch(client.room, opponent, 'ban');
+      }
+      client.socket.close(1008, 'Account banned');
+    }
+    broadcastQueue();
+  }
+  return sendJson(response, 200, { user: adminUserList().find((user) => user.id === profile.id) });
 }
 
 function leaderboard() {
@@ -478,7 +554,7 @@ function handleMessage(client, raw) {
   let message;
   try { message = JSON.parse(raw.toString()); } catch { return; }
   if (message.type === 'hello') {
-    if (!client.account) return client.socket.close(1008, 'Sign in required');
+    if (!client.account || client.account.banned) return client.socket.close(1008, 'Sign in required');
     const profile = accountProfile(client.account);
     profile.name = client.account.username;
     client.id = profile.id;
@@ -514,7 +590,10 @@ function handleMessage(client, raw) {
 
 async function serveStatic(request, response) {
   const pathname = new URL(request.url, 'http://localhost').pathname;
-  if (pathname.startsWith('/api/')) {
+  if (['/admin.html', '/admin.css', '/admin.js'].includes(pathname)) {
+    return response.writeHead(404).end('Not found');
+  }
+  if (pathname.startsWith('/api/') || pathname.startsWith('/internal/admin/')) {
     try {
       if (await handleApi(request, response, pathname) !== false) return;
     } catch (error) {
@@ -558,7 +637,7 @@ server.on('upgrade', (request, socket, head) => {
     return socket.destroy();
   }
   const account = sessionAccount(request);
-  if (!account) {
+  if (!account || account.banned) {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
     return socket.destroy();
   }
