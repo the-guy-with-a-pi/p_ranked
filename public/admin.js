@@ -101,7 +101,14 @@ function renderUsers() {
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
-  const result = await response.json();
+  const body = await response.text();
+  let result;
+  try {
+    result = JSON.parse(body);
+  } catch {
+    const detail = body.trim().slice(0, 160) || 'Empty response';
+    throw new Error(`Admin API ${url} returned non-JSON (${response.status}): ${detail}. Check that the updated admin server is running on port 3002.`);
+  }
   if (!response.ok) throw new Error(result.error || `Request failed (${response.status}).`);
   return result;
 }
