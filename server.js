@@ -234,11 +234,11 @@ function profileSummary(profile) {
 function rankForRating(rating) {
   const ranks = [
     { name: 'Bronze', minimum: 0 },
-    { name: 'Silver', minimum: 1100 },
-    { name: 'Gold', minimum: 1200 },
-    { name: 'Platinum', minimum: 1300 },
-    { name: 'Diamond', minimum: 1450 },
-    { name: 'Emerald', minimum: 1600 },
+    { name: 'Silver', minimum: 1035 },
+    { name: 'Gold', minimum: 1070 },
+    { name: 'Platinum', minimum: 1105 },
+    { name: 'Diamond', minimum: 1140 },
+    { name: 'Emerald', minimum: 1175 },
   ];
   let current = ranks[0];
   let next = null;
